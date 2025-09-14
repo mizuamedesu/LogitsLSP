@@ -8,7 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import warnings
 from lsp_client import LSPClient
 from lsp_logits_processor import LSPAwareLogitsProcessor
-from LogitsObservation import LogitObserverProcessor
+from Observation.LogitsObservation import LogitObserverProcessor
 
 warnings.filterwarnings("ignore")
 os.environ["USE_TF"] = "0"
