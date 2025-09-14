@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logits Visualization</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        .info-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+
+        .info-section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+
+        #file-input {
+            margin: 20px 0;
+            padding: 10px;
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            background: #fafafa;
+        }
+
+        #visualization {
+            margin-top: 30px;
+            overflow-x: auto;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+        }
+
+        .step {
+            display: inline-block;
+            vertical-align: top;
+            margin-right: 30px;
+            min-width: 150px;
+        }
+
+        .step-header {
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 10px;
+            padding: 5px;
+            background: #f0f0f0;
+            border-radius: 3px;
+            text-align: center;
+        }
+
+        .token-option {
+            margin: 5px 0;
+            padding: 8px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .token-option:hover {
+            background: #f0f8ff;
+            border-color: #4CAF50;
+            transform: translateX(3px);
+        }
+
+        .token-option.selected {
+            background: #4CAF50;
+            color: white;
+            border-color: #45a049;
+            font-weight: bold;
+        }
+
+        .token-text {
+            font-family: 'Courier New', monospace;
+            display: inline-block;
+            margin-right: 10px;
+            word-break: break-all;
+        }
+
+        .token-score {
+            float: right;
+            font-size: 0.9em;
+            color: #888;
+        }
+
+        .selected .token-score {
+            color: #e0e0e0;
+        }
+
+        .probability-bar {
+            height: 3px;
+            background: linear-gradient(to right, #4CAF50, #8BC34A);
+            margin-top: 5px;
+            border-radius: 2px;
+            transition: width 0.3s;
+        }
+
+        .selected .probability-bar {
+            background: linear-gradient(to right, #fff, #e0ffe0);
+        }
+
+        .final-output {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e8f5e9;
+            border-radius: 5px;
+            border: 2px solid #4CAF50;
+        }
+
+        .final-output h3 {
+            margin-top: 0;
+            color: #2e7d32;
+        }
+
+        .final-text {
+            font-size: 1.1em;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .arrow {
+            display: inline-block;
+            color: #999;
+            font-size: 24px;
+            vertical-align: middle;
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Logits Visualization - Token Generation Flow</h1>
+
+        <div id="file-input">
+            <label for="jsonFile">JSONファイルを選択: </label>
+            <input type="file" id="jsonFile" accept=".json">
+        </div>
+
+        <div class="info-section">
+            <h3>概要</h3>
+            <div id="info-content">
+                <p>JSONファイルを選択すると、トークン生成の流れが可視化されます。</p>
+                <p>各ステップで上位15個の候補トークンとそのスコアが表示されます。</p>
+                <p>実際に生成されたトークンは緑色でハイライトされます。</p>
+            </div>
+        </div>
+
+        <div id="visualization"></div>
+
+        <div id="final-output" class="final-output" style="display: none;">
+            <h3>最終出力</h3>
+            <div id="final-text" class="final-text"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('jsonFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    visualizeLogits(data);
+                } catch (error) {
+                    alert('JSONファイルの読み込みに失敗しました: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function visualizeLogits(data) {
+            const vizContainer = document.getElementById('visualization');
+            const infoContent = document.getElementById('info-content');
+            const finalOutput = document.getElementById('final-output');
+            const finalText = document.getElementById('final-text');
+
+            // Info更新
+            infoContent.innerHTML = `
+                <p><strong>入力:</strong> ${data.input}</p>
+                <p><strong>ステップ数:</strong> ${data.logit_scores.length}</p>
+                <p>各ステップで候補トークンが表示されています。実際の生成パスを追跡できます。</p>
+            `;
+
+            // 最終出力表示
+            finalText.textContent = data.response;
+            finalOutput.style.display = 'block';
+
+            // JSONから実際に選択されたトークンを取得
+
+            // ビジュアライゼーション構築
+            vizContainer.innerHTML = '<h3>トークン生成フロー</h3>';
+            const flowContainer = document.createElement('div');
+            flowContainer.style.whiteSpace = 'nowrap';
+
+            data.logit_scores.forEach((step, stepIndex) => {
+                if (stepIndex > 0) {
+                    const arrow = document.createElement('span');
+                    arrow.className = 'arrow';
+                    arrow.textContent = '→';
+                    flowContainer.appendChild(arrow);
+                }
+
+                const stepDiv = document.createElement('div');
+                stepDiv.className = 'step';
+
+                const header = document.createElement('div');
+                header.className = 'step-header';
+                header.textContent = `Step ${stepIndex + 1}`;
+                stepDiv.appendChild(header);
+
+                // スコアの最大値を取得
+                const maxLogit = Math.max(...step.logits);
+
+                step.tokens.forEach((token, tokenIndex) => {
+                    const tokenDiv = document.createElement('div');
+                    tokenDiv.className = 'token-option';
+
+                    // 実際に選択されたトークンをハイライト
+                    if (step.selected && step.selected === token) {
+                        tokenDiv.classList.add('selected');
+                    }
+
+                    const tokenText = document.createElement('span');
+                    tokenText.className = 'token-text';
+                    tokenText.textContent = token.replace(/\n/g, '\\n').replace(/\t/g, '\\t');
+                    tokenDiv.appendChild(tokenText);
+
+                    const tokenScore = document.createElement('span');
+                    tokenScore.className = 'token-score';
+                    tokenScore.textContent = step.logits[tokenIndex].toFixed(2);
+                    tokenDiv.appendChild(tokenScore);
+
+                    // 確率バー
+                    const probBar = document.createElement('div');
+                    probBar.className = 'probability-bar';
+                    const normalizedScore = step.logits[tokenIndex] / maxLogit;
+                    probBar.style.width = (normalizedScore * 100) + '%';
+                    tokenDiv.appendChild(probBar);
+
+                    stepDiv.appendChild(tokenDiv);
+                });
+
+                flowContainer.appendChild(stepDiv);
+            });
+
+            vizContainer.appendChild(flowContainer);
+        }
+    </script>
+</body>
+</html>
