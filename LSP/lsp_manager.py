@@ -231,7 +231,7 @@ class LSPManager:
             if not server:
                 config = self.LSP_CONFIGS.get(language, {})
                 if config and config.get("servers"):
-                return None
+                    return None
 
         client = LSPClient(server["command"], self.workspace_path)
 
