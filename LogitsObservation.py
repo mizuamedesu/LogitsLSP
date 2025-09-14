@@ -23,7 +23,7 @@ class LogitObserverProcessor(LogitsProcessor):
         step_data = {
             "tokens": [],
             "logits": [],
-            "selected": None  # 後で実際に生成されたトークンで更新
+            "selected": None
         }
 
         for i in range(len(top_scores)):
