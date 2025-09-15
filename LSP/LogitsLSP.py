@@ -4,7 +4,7 @@ import sys
 import torch
 import json
 import argparse
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
 import warnings
 from lsp_client import LSPClient
 from lsp_manager import LSPManager
@@ -51,8 +51,8 @@ class CombinedLogitsProcessor:
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python LogitsLSP_Simple.py <prompt> <language>")
-        print("Example: python LogitsLSP_Simple.py \"Write hello world\" rust")
+        print("Usage: python LogitsLSP.py <prompt> <language> [output_file] [max_tokens]")
+        print("Example: python LogitsLSP.py \"Write hello world\" rust")
         print(f"Supported languages: {', '.join(LSP_SERVERS.keys())}")
         sys.exit(1)
 
@@ -131,6 +131,10 @@ def main():
     if torch.cuda.is_available():
         inputs = {k: v.cuda() for k, v in inputs.items()}
 
+    print(f"\n[Language: {language}]\n")
+    print("="*50)
+    streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
@@ -140,8 +144,10 @@ def main():
             top_p=0.9,
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id,
-            logits_processor=[combined_processor]
+            logits_processor=[combined_processor],
+            streamer=streamer
         )
+    print("\n" + "="*50)
 
     input_length = inputs['input_ids'].shape[1]
     generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
@@ -169,7 +175,11 @@ def main():
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    print(generated_text)
+    print(f"\n[Output saved to: {output_file}]")
+
+    if lsp_processor.is_lsp_active:
+        print(f"\n[LSP Status: Active for {lsp_logs['lsp_stats']['active_duration']:.2f}s]")
+        print(f"[Total suggestions: {lsp_logs['lsp_stats']['total_suggestions']}]")
 
     lsp_manager.shutdown_all()
 
