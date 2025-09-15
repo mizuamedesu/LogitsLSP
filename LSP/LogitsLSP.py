@@ -31,8 +31,19 @@ LSP_SERVERS = {
 class CombinedLogitsProcessor:
     def __init__(self, processors):
         self.processors = processors
+        self.observer = None
+        self.lsp_processor = None
+
+        for processor in processors:
+            if isinstance(processor, LogitObserverProcessor):
+                self.observer = processor
+            elif isinstance(processor, LSPAwareLogitsProcessor):
+                self.lsp_processor = processor
 
     def __call__(self, input_ids, scores):
+        if self.observer and self.lsp_processor:
+            self.observer.set_lsp_active(self.lsp_processor.is_lsp_active)
+
         for processor in self.processors:
             scores = processor(input_ids, scores)
         return scores
@@ -98,7 +109,7 @@ def main():
 
     processors = []
 
-    observer = LogitObserverProcessor(tokenizer, top_k=15)
+    observer = LogitObserverProcessor(tokenizer, top_k=5)
     processors.append(observer)
 
     lsp_processor = LSPAwareLogitsProcessor(

@@ -16,34 +16,40 @@ class LogitObserverProcessor(LogitsProcessor):
         self.logit_history = []
         self.generated_tokens = []
         self.previous_length = 0
+        self.lsp_active = False
+
+    def set_lsp_active(self, active):
+        self.lsp_active = active
 
     def __call__(self, input_ids, scores):
-        top_scores, top_indices = torch.topk(scores[0], min(self.top_k, scores.size(1)))
+        if self.lsp_active:
+            top_scores, top_indices = torch.topk(scores[0], min(self.top_k, scores.size(1)))
 
-        step_data = {
-            "tokens": [],
-            "logits": [],
-            "selected": None
-        }
+            step_data = {
+                "tokens": [],
+                "logits": [],
+                "selected": None
+            }
 
-        for i in range(len(top_scores)):
-            token_id = top_indices[i].item()
-            token_text = self.tokenizer.decode([token_id])
-            logit_score = top_scores[i].item()
+            for i in range(len(top_scores)):
+                token_id = top_indices[i].item()
+                token_text = self.tokenizer.decode([token_id])
+                logit_score = top_scores[i].item()
 
-            step_data["tokens"].append(token_text)
-            step_data["logits"].append(logit_score)
+                step_data["tokens"].append(token_text)
+                step_data["logits"].append(logit_score)
 
-        if len(input_ids[0]) > self.previous_length and self.previous_length > 0:
-            generated_token_id = input_ids[0][-1].item()
-            generated_token_text = self.tokenizer.decode([generated_token_id])
+            if len(input_ids[0]) > self.previous_length and self.previous_length > 0:
+                generated_token_id = input_ids[0][-1].item()
+                generated_token_text = self.tokenizer.decode([generated_token_id])
 
-            if len(self.logit_history) > 0:
-                self.logit_history[-1]["selected"] = generated_token_text
-                self.generated_tokens.append(generated_token_text)
+                if len(self.logit_history) > 0:
+                    self.logit_history[-1]["selected"] = generated_token_text
+                    self.generated_tokens.append(generated_token_text)
+
+            self.logit_history.append(step_data)
 
         self.previous_length = len(input_ids[0])
-        self.logit_history.append(step_data)
         return scores
 
 
