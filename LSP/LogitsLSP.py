@@ -135,6 +135,7 @@ def main():
     print("="*50)
     streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
+    print(f"[Starting generation with max_tokens={max_tokens}]")
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
@@ -178,8 +179,8 @@ def main():
     print(f"\n[Output saved to: {output_file}]")
 
     if lsp_processor.is_lsp_active:
-        print(f"\n[LSP Status: Active for {lsp_logs['lsp_stats']['active_duration']:.2f}s]")
-        print(f"[Total suggestions: {lsp_logs['lsp_stats']['total_suggestions']}]")
+        print(f"\n[LSP Status: Active for {lsp_logs['lsp_active_duration']:.2f}s]")
+        print(f"[Total suggestions: {lsp_logs['total_suggestions']}]")
 
     lsp_manager.shutdown_all()
 
