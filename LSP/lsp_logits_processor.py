@@ -37,6 +37,8 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
         self.suggestion_log = []
         self.is_lsp_active = False
         self.activation_time = None
+        self.score_changes_log = []
+        self.current_suggestions = []
 
         if isinstance(lsp_input, LSPManager):
             self.lsp_manager = lsp_input
@@ -158,6 +160,8 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
         if not token_weights:
             return scores
 
+        original_scores = scores.clone()
+
         mask = torch.full_like(scores, self.mask_strength)
 
         max_weight = max(token_weights.values()) if token_weights else 1.0
@@ -172,6 +176,8 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
             scores = scores / self.temperature
 
         masked_scores = scores + mask
+
+        self._log_score_changes(original_scores, masked_scores, token_weights)
 
         return masked_scores
 
@@ -209,6 +215,8 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
             "suggestions": []
         }
 
+        self.current_suggestions = []
+
         for idx, completion in enumerate(completions[:10]):
             if isinstance(completion, dict):
                 text = completion.get("label", "") or completion.get("insertText", "")
@@ -220,20 +228,47 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
                     "detail": detail,
                     "rank": idx + 1
                 })
+                self.current_suggestions.append(text)
             elif isinstance(completion, str):
                 suggestion_entry["suggestions"].append({
                     "text": completion[:100] if len(completion) > 100 else completion,
                     "kind": "text",
                     "rank": idx + 1
                 })
+                self.current_suggestions.append(completion)
 
         if suggestion_entry["suggestions"]:
             self.suggestion_log.append(suggestion_entry)
+
+    def _log_score_changes(self, original_scores: torch.FloatTensor, modified_scores: torch.FloatTensor, token_weights: Dict[int, float]):
+        score_change_entry = {
+            "timestamp": time.time(),
+            "position": {"line": self.line_number, "char": self.char_position},
+            "changes": []
+        }
+
+        for token_id in token_weights.keys():
+            if token_id < len(original_scores):
+                token_text = self.tokenizer.decode([token_id])
+                score_change_entry["changes"].append({
+                    "token": token_text,
+                    "token_id": token_id,
+                    "original_score": original_scores[token_id].item(),
+                    "modified_score": modified_scores[token_id].item(),
+                    "weight": token_weights[token_id]
+                })
+
+        if score_change_entry["changes"]:
+            self.score_changes_log.append(score_change_entry)
 
     def get_lsp_logs(self) -> Dict[str, Any]:
         return {
             "activation_log": self.lsp_activation_log,
             "suggestion_log": self.suggestion_log,
+            "score_changes_log": self.score_changes_log,
             "total_suggestions": len(self.suggestion_log),
             "lsp_active_duration": time.time() - self.activation_time if self.activation_time else 0
         }
+
+    def get_current_suggestions(self) -> List[str]:
+        return self.current_suggestions

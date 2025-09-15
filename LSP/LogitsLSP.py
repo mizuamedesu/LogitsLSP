@@ -4,12 +4,13 @@ import sys
 import torch
 import json
 import argparse
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import warnings
 from lsp_client import LSPClient
 from lsp_manager import LSPManager
 from lsp_logits_processor import LSPAwareLogitsProcessor
 from Observation.LogitsObservation import LogitObserverProcessor
+from lsp_streamer import LSPAwareStreamer
 
 warnings.filterwarnings("ignore")
 os.environ["USE_TF"] = "0"
@@ -133,7 +134,8 @@ def main():
 
     print(f"\n[Language: {language}]\n")
     print("="*50)
-    streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+
+    streamer = LSPAwareStreamer(tokenizer, lsp_processor, skip_prompt=True, skip_special_tokens=True)
 
     print(f"[Starting generation with max_tokens={max_tokens}]")
     with torch.no_grad():
@@ -167,6 +169,7 @@ def main():
         "logit_scores": observer.logit_history,
         "lsp_activation": lsp_logs["activation_log"],
         "lsp_suggestions": lsp_logs["suggestion_log"],
+        "lsp_score_changes": lsp_logs["score_changes_log"],
         "lsp_stats": {
             "total_suggestions": lsp_logs["total_suggestions"],
             "active_duration": lsp_logs["lsp_active_duration"]
