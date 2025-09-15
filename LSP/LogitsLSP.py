@@ -7,6 +7,7 @@ import argparse
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import warnings
 from lsp_client import LSPClient
+from lsp_manager import LSPManager
 from lsp_logits_processor import LSPAwareLogitsProcessor
 from Observation.LogitsObservation import LogitObserverProcessor
 
@@ -68,15 +69,18 @@ def main():
         trust_remote_code=True
     )
 
-    lsp_command = LSP_SERVERS[language]
     workspace = os.getcwd()
 
-    lsp_client = LSPClient(lsp_command, workspace)
-    try:
-        lsp_client.start()
-    except Exception as e:
-        print(f"Error: Failed to start LSP server: {e}")
-        print(f"Make sure {lsp_command[0]} is installed")
+    lsp_manager = LSPManager(workspace_path=workspace, auto_install=True)
+    lsp_client = lsp_manager.get_client(language=language)
+
+    if not lsp_client:
+        print(f"Error: Failed to start LSP server for {language}")
+        config = lsp_manager.LSP_CONFIGS.get(language, {})
+        if config and config.get("servers"):
+            server = config["servers"][0]
+            print(f"Please install the LSP server manually:")
+            print(f"  {server['install_cmd']}")
         sys.exit(1)
 
     file_extensions = {
@@ -148,7 +152,7 @@ def main():
 
     print(generated_text)
 
-    lsp_client.shutdown()
+    lsp_manager.shutdown_all()
 
 
 if __name__ == "__main__":
