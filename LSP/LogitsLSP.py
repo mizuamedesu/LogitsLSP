@@ -140,11 +140,19 @@ def main():
         last_token_text = tokenizer.decode([last_token_id])
         observer.logit_history[-1]["selected"] = last_token_text
 
+    lsp_logs = lsp_processor.get_lsp_logs()
+
     result = {
         "prompt": prompt,
         "language": language,
         "response": generated_text,
-        "logit_scores": observer.logit_history
+        "logit_scores": observer.logit_history,
+        "lsp_activation": lsp_logs["activation_log"],
+        "lsp_suggestions": lsp_logs["suggestion_log"],
+        "lsp_stats": {
+            "total_suggestions": lsp_logs["total_suggestions"],
+            "active_duration": lsp_logs["lsp_active_duration"]
+        }
     }
 
     with open(output_file, 'w', encoding='utf-8') as f:

@@ -1,5 +1,6 @@
 import torch
 import math
+import time
 from transformers import LogitsProcessor
 from typing import List, Optional, Dict, Any, Union, Tuple
 from collections import defaultdict
@@ -32,6 +33,11 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
         self.current_completion_context = ""
         self.completion_prefix_map = defaultdict(list)
 
+        self.lsp_activation_log = []
+        self.suggestion_log = []
+        self.is_lsp_active = False
+        self.activation_time = None
+
         if isinstance(lsp_input, LSPManager):
             self.lsp_manager = lsp_input
             self.lsp_client = None
@@ -59,6 +65,16 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
                     )
 
             if self.lsp_client and self.lsp_client.initialized:
+                if not self.is_lsp_active:
+                    self.is_lsp_active = True
+                    self.activation_time = time.time()
+                    self.lsp_activation_log.append({
+                        "timestamp": self.activation_time,
+                        "position": {"line": self.line_number, "char": self.char_position},
+                        "context": generated_text[-100:] if len(generated_text) > 100 else generated_text,
+                        "language": self.language
+                    })
+
                 if not self.lsp_client.document_uri and self.file_path:
                     self.lsp_client.open_document(self.file_path, generated_text)
                 elif self.lsp_client.document_uri:
@@ -73,6 +89,7 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
                     self.cache_position = cache_key
 
                 if completions:
+                    self._log_suggestions(completions, generated_text)
                     token_weights = self._get_weighted_tokens_from_completions(
                         completions, generated_text
                     )
@@ -183,3 +200,40 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
 
         if self.lsp_client and self.lsp_client.document_uri:
             self.lsp_client.update_document(document)
+
+    def _log_suggestions(self, completions: List[Dict[str, Any]], context: str):
+        suggestion_entry = {
+            "timestamp": time.time(),
+            "position": {"line": self.line_number, "char": self.char_position},
+            "context": context[-50:] if len(context) > 50 else context,
+            "suggestions": []
+        }
+
+        for idx, completion in enumerate(completions[:10]):
+            if isinstance(completion, dict):
+                text = completion.get("label", "") or completion.get("insertText", "")
+                kind = completion.get("kind", "unknown")
+                detail = completion.get("detail", "")
+                suggestion_entry["suggestions"].append({
+                    "text": text[:100] if len(text) > 100 else text,
+                    "kind": kind,
+                    "detail": detail,
+                    "rank": idx + 1
+                })
+            elif isinstance(completion, str):
+                suggestion_entry["suggestions"].append({
+                    "text": completion[:100] if len(completion) > 100 else completion,
+                    "kind": "text",
+                    "rank": idx + 1
+                })
+
+        if suggestion_entry["suggestions"]:
+            self.suggestion_log.append(suggestion_entry)
+
+    def get_lsp_logs(self) -> Dict[str, Any]:
+        return {
+            "activation_log": self.lsp_activation_log,
+            "suggestion_log": self.suggestion_log,
+            "total_suggestions": len(self.suggestion_log),
+            "lsp_active_duration": time.time() - self.activation_time if self.activation_time else 0
+        }
