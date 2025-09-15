@@ -100,7 +100,10 @@ def main():
     lsp_processor = LSPAwareLogitsProcessor(
         tokenizer,
         lsp_client,
-        mask_strength=-10.0
+        mask_strength=-10.0,
+        use_adaptive_mask=True,
+        lookahead_tokens=3,
+        use_completion_scores=True
     )
     processors.append(lsp_processor)
 
