@@ -40,6 +40,10 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
         self.score_changes_log = []
         self.current_suggestions = []
 
+        self.in_code_block = False
+        self.code_block_content = ""
+        self.code_block_language = None
+
         if isinstance(lsp_input, LSPManager):
             self.lsp_manager = lsp_input
             self.lsp_client = None
@@ -53,16 +57,24 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
         for batch_idx in range(batch_size):
             generated_text = self.tokenizer.decode(input_ids[batch_idx], skip_special_tokens=True)
             self.current_document = generated_text
-            self._update_position(generated_text)
+
+            self._detect_code_block(generated_text)
+
+            if self.in_code_block:
+                self._update_position(self.code_block_content)
+            else:
+                self.is_lsp_active = False
+                self.current_suggestions = []
+                continue
 
             if self.lsp_manager:
                 if not self.language:
-                    self.language = self.lsp_manager.detect_language(generated_text, self.file_path)
+                    self.language = self.lsp_manager.detect_language(self.code_block_content, self.file_path)
 
                 if self.language:
                     self.lsp_client = self.lsp_manager.get_client(
                         language=self.language,
-                        code=generated_text,
+                        code=self.code_block_content,
                         file_path=self.file_path
                     )
 
@@ -78,9 +90,9 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
                     })
 
                 if not self.lsp_client.document_uri and self.file_path:
-                    self.lsp_client.open_document(self.file_path, generated_text)
+                    self.lsp_client.open_document(self.file_path, self.code_block_content)
                 elif self.lsp_client.document_uri:
-                    self.lsp_client.update_document(generated_text)
+                    self.lsp_client.update_document(self.code_block_content)
 
                 cache_key = (self.line_number, self.char_position)
                 if cache_key == self.cache_position and self.completion_cache:
@@ -91,9 +103,9 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
                     self.cache_position = cache_key
 
                 if completions:
-                    self._log_suggestions(completions, generated_text)
+                    self._log_suggestions(completions, self.code_block_content)
                     token_weights = self._get_weighted_tokens_from_completions(
-                        completions, generated_text
+                        completions, self.code_block_content
                     )
 
                     if token_weights:
@@ -272,3 +284,32 @@ class LSPAwareLogitsProcessor(LogitsProcessor):
 
     def get_current_suggestions(self) -> List[str]:
         return self.current_suggestions
+
+    def _detect_code_block(self, text: str):
+        code_block_patterns = [
+            f"```{self.language}" if self.language else "```",
+            "```python", "```py", "```rust", "```rs",
+            "```javascript", "```js", "```typescript", "```ts",
+            "```java", "```cpp", "```c", "```go"
+        ]
+
+        for pattern in code_block_patterns:
+            if pattern in text:
+                parts = text.split(pattern)
+                if len(parts) > 1:
+                    last_block = parts[-1]
+
+                    if "```" in last_block:
+                        end_idx = last_block.index("```")
+                        self.code_block_content = last_block[:end_idx]
+                        self.in_code_block = False
+                        self.code_block_language = pattern.replace("```", "")
+                    else:
+                        self.code_block_content = last_block
+                        self.in_code_block = True
+                        self.code_block_language = pattern.replace("```", "")
+                    return
+
+        self.in_code_block = False
+        self.code_block_content = ""
+        self.code_block_language = None
